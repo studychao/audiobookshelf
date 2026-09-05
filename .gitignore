@@ -12,6 +12,9 @@
 /client/dist/
 /dist/
 /deploy/
+
+__pycache__/
+.pytest_cache/
 /coverage/
 /.nyc_output/
 /ffmpeg*
