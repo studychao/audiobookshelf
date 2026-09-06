@@ -182,3 +182,73 @@ def test_deleted_book_can_be_imported_again(setup: tuple, monkeypatch: pytest.Mo
     monkeypatch.setattr(service, "abs_request", api)
     second = client.post("/personal/api/imports", json=manifest()).json()
     assert second["id"] != first["id"]
+
+
+@pytest.mark.parametrize('extension', ['epub', 'pdf', 'mobi', 'azw3', 'cbz', 'cbr'])
+def test_standalone_ebook_import_accepts_reader_formats(setup: tuple, extension: str) -> None:
+    client, _, _ = setup
+    spec = manifest()
+    spec['files'][0]['name'] = f'正文.{extension.upper()}'
+    response = client.post('/personal/api/imports', json=spec)
+    assert response.status_code == 200, response.text
+    assert response.json()['primaryEbook'] == f'正文.{extension.upper()}'
+    assert response.json()['files'][0]['destination'] == f'正文.{extension.upper()}'
+
+
+def test_primary_ebook_must_be_in_import_and_covers_are_not_books(setup: tuple) -> None:
+    client, _, _ = setup
+    spec = manifest(); spec['primary_ebook'] = 'missing.epub'
+    assert client.post('/personal/api/imports', json=spec).status_code == 422
+    spec = manifest(); spec['files'][0]['name'] = 'cover.jpg'
+    assert client.post('/personal/api/imports', json=spec).status_code == 422
+
+
+def test_ebook_default_prefers_epub_and_respects_choice(setup: tuple) -> None:
+    client, _, _ = setup
+    spec = manifest()
+    spec['files'] = [{'name': name, 'size': 8, 'fingerprint': 'a' * 64} for name in ['正文.pdf', '正文.epub']]
+    assert client.post('/personal/api/imports', json=spec).json()['primaryEbook'] == '正文.epub'
+    spec['primary_ebook'] = '正文.pdf'
+    assert client.post('/personal/api/imports', json=spec).json()['primaryEbook'] == '正文.pdf'
+
+
+def test_ebook_numbers_do_not_become_audio_chapters() -> None:
+    result = analyze(['第一卷.epub', '第十二集.pdf', '封面.jpg', '第2集.mp3', '第1集.mp3'])
+    assert result['order'][:2] == [4, 3]
+    assert result['missing'] == []
+    assert result['duplicateNumbers'] == []
+
+
+def test_audio_resume_fingerprint_is_compatible_with_previous_release(setup: tuple) -> None:
+    import hashlib
+    client, _, _ = setup
+    old_spec = {**manifest(), 'narrator': '', 'series': ''}
+    old_fingerprint = hashlib.sha256(json.dumps(old_spec, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    job = client.post('/personal/api/imports', json=manifest()).json()
+    assert job['fingerprint'] == old_fingerprint
+
+
+@pytest.mark.parametrize('with_audio', [False, True])
+def test_catalog_waits_for_ebooks_and_sets_primary_without_empty_track_patch(monkeypatch: pytest.MonkeyPatch, with_audio: bool) -> None:
+    job = {'destination': 'audiobookshelf/audiobooks/fixture', 'primaryEbook': '正文.pdf', 'files': [
+        {'name': '正文.epub', 'destination': '正文.epub'}, {'name': '正文.pdf', 'destination': '正文.pdf'}]}
+    audio = [{'ino': 'audio', 'metadata': {'filename': '0001-第一集.wav'}}] if with_audio else []
+    if with_audio:
+        job['files'].append({'name': '第一集.wav', 'destination': '0001-第一集.wav'})
+    ebooks = [{'ino': ext, 'fileType': 'ebook', 'isSupplementary': ext == 'pdf', 'metadata': {'filename': f'正文.{ext}'}} for ext in ['epub', 'pdf']]
+    expanded = {'media': {'audioFiles': audio, 'ebookFile': ebooks[0]}, 'libraryFiles': ebooks}
+    calls = []
+    monkeypatch.setattr(service, 'books', lambda user: {'books': [{'id': 'fixture', 'relPath': 'fixture'}]})
+    def api(method: str, path: str, token: str, **kwargs: object) -> SimpleNamespace:
+        calls.append((method, path, kwargs))
+        if path.endswith('/ebook/pdf/status'):
+            expanded['media']['ebookFile'] = ebooks[1]
+        return SimpleNamespace(json=lambda: expanded)
+    monkeypatch.setattr(service, 'abs_request', api)
+    service.finish_catalog(job, {'token': 'Bearer fixture'})
+    assert job['bookId'] == 'fixture'
+    assert any(path.endswith('/ebook/pdf/status') for _, path, _ in calls)
+    assert any(path.endswith('/tracks') for _, path, _ in calls) == with_audio
+    calls.clear()
+    service.finish_catalog(job, {'token': 'Bearer fixture'})
+    assert not any(path.endswith('/status') for _, path, _ in calls), 'Retry must not toggle the primary ebook off'

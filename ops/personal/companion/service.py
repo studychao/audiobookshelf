@@ -22,7 +22,7 @@ import oss2
 from oss2.models import PartInfo
 from pydantic import BaseModel, Field, field_validator
 
-from organize import AUDIO, IMAGES, analyze, safe_name
+from organize import AUDIO, EBOOKS, IMAGES, analyze, safe_name
 
 log = logging.getLogger("audiobookshelf.personal")
 PART_SIZE = 4 * 1024 * 1024
@@ -132,8 +132,8 @@ class FileSpec(BaseModel):
     @field_validator("name")
     @classmethod
     def validate_name(cls, name: str) -> str:
-        if name != safe_name(name) or PurePosixPath(name).suffix.lower() not in AUDIO | IMAGES:
-            raise ValueError("请选择音频或封面文件，文件名不能包含路径")
+        if name != safe_name(name) or PurePosixPath(name).suffix.lower() not in AUDIO | EBOOKS | IMAGES:
+            raise ValueError("请选择音频、电子书或封面文件，文件名不能包含路径")
         return name
 
 
@@ -143,6 +143,7 @@ class ImportSpec(BaseModel):
     narrator: str = Field(default="", max_length=120)
     series: str = Field(default="", max_length=120)
     library_id: str = Field(pattern=r"^[a-zA-Z0-9_-]+$")
+    primary_ebook: str | None = Field(default=None, min_length=1, max_length=240)
     files: list[FileSpec] = Field(min_length=1, max_length=3000)
 
     @field_validator("title")
@@ -182,13 +183,20 @@ def analyze_files(body: list[str], user: User) -> dict[str, object]:
 @app.post("/personal/api/imports")
 def create_import(body: ImportSpec, user: User) -> dict[str, Any]:
     safe_name(body.title)
-    if body.library_id not in {lib["id"] for lib in libraries(user)["libraries"]}:
-        raise HTTPException(403, "目标书库未配置到有声书存储")
-    if not any(PurePosixPath(file.name).suffix.lower() in AUDIO for file in body.files):
-        raise HTTPException(422, "至少需要一个音频文件")
+    library = next((lib for lib in libraries(user)["libraries"] if lib["id"] == body.library_id), None)
+    if library is None:
+        raise HTTPException(403, "目标书库未配置到书籍存储")
+    ebooks = [file.name for file in body.files if PurePosixPath(file.name).suffix.lower() in EBOOKS]
+    if not ebooks and not any(PurePosixPath(file.name).suffix.lower() in AUDIO for file in body.files):
+        raise HTTPException(422, "至少需要一个音频或电子书文件")
+    if ebooks and library.get("settings", {}).get("audiobooksOnly"):
+        raise HTTPException(409, "目标书库只允许音频，请在书库设置中关闭「仅有声书」后重试")
+    if body.primary_ebook is not None and body.primary_ebook not in ebooks:
+        raise HTTPException(422, "默认阅读版本必须是本次上传的电子书文件")
+    preferred = body.primary_ebook or next((name for name in ebooks if PurePosixPath(name).suffix.lower() == ".epub"), ebooks[0] if ebooks else None)
     if analyze([file.name for file in body.files])["duplicateNames"]:
         raise HTTPException(409, "文件名重复，请先修改")
-    spec = body.model_dump()
+    spec = body.model_dump(exclude_none=True)
     fingerprint = hashlib.sha256(json.dumps(spec, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     with database() as db:
         row = db.execute("SELECT document FROM imports WHERE owner=? AND fingerprint=? ORDER BY updated DESC LIMIT 1", (user["id"], fingerprint)).fetchone()
@@ -219,6 +227,8 @@ def create_import(body: ImportSpec, user: User) -> dict[str, Any]:
             bucket.abort_multipart_upload(file["key"], file["uploadId"])
         raise HTTPException(502, "暂时无法创建上传，请稍后重试")
     job = {"id": job_id, "owner": user["id"], "fingerprint": fingerprint, "state": "uploading", "partSize": PART_SIZE, "metadata": {"title": body.title, "authors": [body.author] if body.author else [], "narrators": [body.narrator] if body.narrator else [], "series": [body.series] if body.series else []}, "libraryId": body.library_id, "destination": f"audiobookshelf/audiobooks/{safe_name(body.title)} [{job_id[:8]}]", "files": files}
+    if preferred:
+        job["primaryEbook"] = preferred
     save(job)
     return job
 
@@ -337,12 +347,26 @@ def finish_catalog(job: dict[str, Any], user: dict[str, Any]) -> None:
         item = next((book for book in books(user)["books"] if book.get("relPath") == relative), None)
         if item:
             expanded = abs_request("GET", f"/api/items/{item['id']}?expanded=1", user["token"]).json()
-            audio = expanded["media"]["audioFiles"]
+            audio = expanded["media"].get("audioFiles", [])
             by_name = {file["metadata"]["filename"]: file for file in audio}
             expected = [file["destination"] for file in job["files"] if PurePosixPath(file["name"]).suffix.lower() in AUDIO]
-            if all(name in by_name for name in expected):
-                # Explicit manual order wins over embedded MP3 track tags on future scans.
-                abs_request("PATCH", f"/api/items/{item['id']}/tracks", user["token"], json={"orderedFileData": [{"ino": by_name[name]["ino"], "exclude": False} for name in expected]})
+            expected_ebooks = [file["destination"] for file in job["files"] if PurePosixPath(file["name"]).suffix.lower() in EBOOKS]
+            ebook_files = {file["metadata"]["filename"]: file for file in expanded.get("libraryFiles", []) if file.get("fileType") == "ebook"}
+            if all(name in by_name for name in expected) and all(name in ebook_files for name in expected_ebooks):
+                if expected:
+                    # Explicit manual order wins over embedded MP3 track tags on future scans.
+                    abs_request("PATCH", f"/api/items/{item['id']}/tracks", user["token"], json={"orderedFileData": [{"ino": by_name[name]["ino"], "exclude": False} for name in expected]})
+                if expected_ebooks:
+                    preferred = ebook_files[job.get("primaryEbook") or expected_ebooks[0]]
+                    primary = expanded["media"].get("ebookFile") or {}
+                    if primary.get("ino") != preferred["ino"]:
+                        # This upstream API toggles primary status: call only for a supplementary file.
+                        if preferred.get("isSupplementary") is not True:
+                            raise HTTPException(409, "电子书仍在扫描，请稍后重试完成入库")
+                        abs_request("PATCH", f"/api/items/{item['id']}/ebook/{preferred['ino']}/status", user["token"])
+                    refreshed = abs_request("GET", f"/api/items/{item['id']}?expanded=1", user["token"]).json()
+                    if (refreshed["media"].get("ebookFile") or {}).get("ino") != preferred["ino"]:
+                        raise HTTPException(409, "默认阅读版本尚未就绪，请稍后重试")
                 job["bookId"] = item["id"]
                 return
         time.sleep(1)

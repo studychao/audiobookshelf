@@ -9,6 +9,7 @@ from pathlib import PurePosixPath
 DIGITS = dict(zip("零〇一二三四五六七八九两", [0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 2]))
 UNITS = {"十": 10, "百": 100, "千": 1000, "万": 10000}
 AUDIO = {".mp3", ".m4b", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".wav"}
+EBOOKS = {".epub", ".pdf", ".mobi", ".azw3", ".cbz", ".cbr"}
 IMAGES = {".jpg", ".jpeg", ".png", ".webp"}
 
 
@@ -59,9 +60,11 @@ def safe_name(value: str) -> str:
 
 
 def analyze(names: list[str]) -> dict[str, object]:
-    def key(entry: tuple[int, str]) -> tuple[int, int, int, str]:
-        number = chapter_number(entry[1])
-        return (volume_number(entry[1]), 0 if number is not None else 1, number or 0, entry[1].casefold())
+    def key(entry: tuple[int, str]) -> tuple[int, int, int, int, str]:
+        suffix = PurePosixPath(entry[1]).suffix.lower()
+        kind = 0 if suffix in AUDIO else 1 if suffix in EBOOKS else 2
+        number = chapter_number(entry[1]) if suffix in AUDIO else None
+        return (kind, volume_number(entry[1]) if kind == 0 else 0, 0 if number is not None else 1, number or 0, entry[1].casefold())
 
     ordered = sorted(enumerate(names), key=key)
     volume_chapters = [(volume_number(name), chapter_number(name)) for name in names if PurePosixPath(name).suffix.lower() in AUDIO and chapter_number(name) is not None]
