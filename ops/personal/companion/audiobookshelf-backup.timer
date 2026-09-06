@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Audiobookshelf backup
+
+[Timer]
+OnCalendar=*-*-* 19:15:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

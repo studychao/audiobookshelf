@@ -27,3 +27,5 @@ sw.*
 .idea/*
 tailwind.compiled.css
 tailwind.config.js
+
+ops/personal/companion/runtime.env

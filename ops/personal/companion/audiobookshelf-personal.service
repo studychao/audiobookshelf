@@ -1,0 +1,23 @@
+[Unit]
+Description=Audiobookshelf personal import and organization
+After=network-online.target audiobookshelf.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/audiobookshelf/companion
+Environment=PERSONAL_BIND=127.0.0.1
+EnvironmentFile=-/opt/audiobookshelf/companion/runtime.env
+ExecStart=/opt/audiobookshelf/venv/bin/uvicorn service:app --host ${PERSONAL_BIND} --port 13379 --no-access-log
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/audiobookshelf/personal-data
+MemoryMax=384M
+
+[Install]
+WantedBy=multi-user.target

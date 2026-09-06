@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>添加有声书</title><link rel="stylesheet" href="/personal/style.css"></head>
+<body>
+<main>
+  <header><a href="/" class="brand">Audiobookshelf</a><span>你的私人书库</span><button id="logout" class="text-button" hidden>切换账号</button></header>
+  <section id="login"><h1>把喜欢的书放进书架</h1><p class="muted">使用你的书库账号登录。</p><form id="login-form"><label>用户名<input name="username" autocomplete="username" required value="chao"></label><label>密码<input name="password" type="password" autocomplete="current-password" required></label><button>登录书库</button></form></section>
+  <div id="workspace" hidden>
+    <nav aria-label="管理功能"><button data-tab="import" class="selected">添加有声书</button><button data-tab="organize">整理书库</button><button data-tab="backup">备份</button></nav>
+    <section id="import-panel">
+      <h1>一本书，一次整理好。</h1><p class="muted">选择音频，确认章节，再放进书架。中断后重新选择相同文件即可续传。</p>
+      <div id="drop"><span class="drop-icon" aria-hidden="true">＋</span><strong>把一本书的文件拖到这里</strong><span class="muted">MP3、M4B、M4A、FLAC、WAV 等音频，也可以带上封面</span><div class="picker-buttons"><label class="button">选择文件<input id="files" type="file" accept="audio/*,.m4b,.opus,.jpg,.jpeg,.png,.webp" multiple hidden></label><label class="button secondary">选择文件夹<input id="folder" type="file" webkitdirectory multiple hidden></label></div></div>
+      <form id="import-form" hidden>
+        <div class="fields"><label>书名<input id="title" required maxlength="120" placeholder="例如：三体"></label><label>书库<select id="library"></select></label><label>作者<input id="author" maxlength="120" placeholder="可选"></label><label>演播者<input id="narrator" maxlength="120" placeholder="可选"></label><label class="wide">系列<input id="series" maxlength="120" placeholder="可选，例如：地球往事"></label></div>
+        <div class="list-heading"><h2>章节顺序 <span id="count"></span></h2><button id="sort" type="button" class="text-button">按章节排序</button></div>
+        <p id="warnings" class="warning" hidden></p><ol id="chapters"></ol>
+        <div id="progress-box" hidden><progress aria-label="有声书上传进度" id="progress" max="100" value="0"></progress><p id="progress-text" role="status" aria-live="polite"></p></div>
+        <div class="actions"><button id="upload">上传到书库</button><button id="pause" type="button" class="secondary" hidden>暂停上传</button><button id="reset" type="button" class="text-button">重新选择</button></div>
+      </form>
+    </section>
+    <section id="organize-panel" hidden><h1>把书架整理清楚</h1><p class="muted">选择书籍，批量更新作者、演播者或系列。未勾选的字段会保留。</p><div id="book-list"></div><form id="metadata-form"><div class="fields"><label><span><input type="checkbox" id="edit-author"> 更新作者</span><input id="batch-author" aria-label="批量设置作者" maxlength="120"></label><label><span><input type="checkbox" id="edit-narrator"> 更新演播者</span><input id="batch-narrator" aria-label="批量设置演播者" maxlength="120"></label><label><span><input type="checkbox" id="edit-series"> 更新系列</span><input id="batch-series" aria-label="批量设置系列" maxlength="120"></label></div><button>保存所选书籍</button></form></section>
+    <section id="backup-panel" hidden><h1>进度也值得保存</h1><p class="muted">每天自动备份账号、听书进度、书目和封面，保留最近 14 份。音频文件继续保存在原书库中。</p><p id="backup-status">正在读取备份状态…</p><button id="backup-now">立即备份</button><p class="muted">需要恢复时，从 OSS 的 audiobookshelf/backups/ 下载 .audiobookshelf 文件，在书库设置的备份页面导入并恢复。</p></section>
+  </div>
+  <p id="message" role="status" aria-live="polite" hidden></p>
+</main><script type="module" src="/personal/ui.mjs"></script>
+</body></html>

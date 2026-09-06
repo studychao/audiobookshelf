@@ -1,0 +1,16 @@
+[Unit]
+Description=Verified Audiobookshelf backup to private OSS
+After=audiobookshelf.service network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/audiobookshelf/companion
+ExecStart=/opt/audiobookshelf/venv/bin/python backups.py
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/audiobookshelf/personal-data
+MemoryMax=256M
+TimeoutStartSec=1800
