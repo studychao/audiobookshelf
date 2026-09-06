@@ -30,6 +30,11 @@
           </ui-tooltip>
         </nuxt-link>
 
+        <a v-if="userIsAdminOrUp" href="/personal/" aria-label="添加书籍" title="添加有声书或电子书" class="inline-flex shrink-0 items-center justify-center gap-1 h-9 px-2 mx-1 rounded-sm border border-white/30 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+          <span class="material-symbols text-xl" aria-hidden="true">add</span>
+          <span class="hidden sm:inline text-sm whitespace-nowrap">添加书籍</span>
+        </a>
+
         <nuxt-link v-if="userCanUpload && currentLibrary" to="/upload" class="hover:text-gray-200 cursor-pointer w-8 h-8 flex items-center justify-center mx-1">
           <ui-tooltip :text="$strings.ButtonUpload" direction="bottom" class="flex items-center">
             <span class="material-symbols text-2xl" aria-label="Upload Media" role="button">&#xf09b;</span>

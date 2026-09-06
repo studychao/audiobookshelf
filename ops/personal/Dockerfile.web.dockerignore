@@ -1,0 +1,7 @@
+**
+!client/
+!client/dist/
+!client/dist/**
+!ops/
+!ops/personal/
+!ops/personal/Dockerfile.web

@@ -1,6 +1,6 @@
 # Personal OSS deployment
 
-Audiobookshelf runs from the pinned official 2.36.0 image. The Python files render and verify the personal deployment; upstream server behavior is unchanged.
+Audiobookshelf uses the pinned official 2.36.0 server with a customized web client layered on top. The Python files render and verify the personal deployment; upstream server behavior is unchanged.
 
 - OSS media: `BUCKET/audiobookshelf/audiobooks/` and `BUCKET/audiobookshelf/podcasts/`.
 - Server mount: `/mnt/audiobookshelf`, using ossfs 1.91.11 with V4 authentication and a same-region internal HTTPS endpoint.
@@ -25,6 +25,22 @@ Install `audiobookshelf-storage.service` and `audiobookshelf.service` under `/et
 systemctl daemon-reload
 systemctl enable --now audiobookshelf.service
 ```
+
+## Web navigation
+
+The web app toolbar includes a visible “添加书籍” link to `/personal/` for administrators. It reuses the same-origin login token and leaves the original `/upload` entry available. On narrow screens the new entry uses an accessible plus icon.
+
+Build the customized client from the locked dependencies, then layer its static assets on the pinned server image:
+
+```sh
+cd client
+CYPRESS_INSTALL_BINARY=0 npm ci --no-audit --no-fund
+npm run generate
+cd ..
+docker build -f ops/personal/Dockerfile.web -t audiobookshelf-personal:web-COMMIT .
+```
+
+On the server, back up `/opt/audiobookshelf/docker-compose.yml`, set only its image to the newly built tag, validate with `docker compose config --quiet`, and restart `audiobookshelf.service`. Keep the old image and Compose backup for rollback. Do not bypass the existing OSS mount guard. The Dockerfile copies only web assets; database, media mounts and the server runtime stay on the pinned version.
 
 ## Storage behavior
 
